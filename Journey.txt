@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 =>Day 1:
 
 Version 1:
@@ -8,4 +9,16 @@ Version 1:
 ✅ Show a simple popup with sync status.
 
 ->Decided to complete HTML, CSS until 12/07/2026
+=======
+=>Day 1:
+
+Version 1:
+✅ Detect an accepted Codeforces submission.
+✅ Extract the problem title, language, and source code.
+✅ Authenticate with GitHub.
+✅ Create or update a file in the user's repository automatically.
+✅ Show a simple popup with sync status.
+
+->Decided to complete HTML, CSS until 12/07/2026
+>>>>>>> e49125aef07f1b0ea7e9cd5ca9abb3952c560b65
 ->Designed an overview of authorization popup(Just a design it will not popup from corner){for that we need JS}.
