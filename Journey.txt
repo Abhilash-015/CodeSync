@@ -20,7 +20,6 @@ Version 1:
 ✅ Show a simple popup with sync status.
 
 ->Decided to complete HTML, CSS until 12/07/2026
->>>>>>> e49125aef07f1b0ea7e9cd5ca9abb3952c560b65
 ->Designed an overview of authorization popup(Just a design it will not popup from corner){for that we need JS}.
 =>Day 2:
 
@@ -32,4 +31,8 @@ Version 1:
 ->Made my first auth page to popup on chrome extension.
 ->Changed name of project from "CODEHUB" --> "CODESYNC".
 ->Made logo of my project.
-->
+
+=>Day 4:
+->Why manifest is written in JSON?
+>>>>>>> e49125aef07f1b0ea7e9cd5ca9abb3952c560b65
+
