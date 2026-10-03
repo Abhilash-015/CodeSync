@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>CodeSync</title>
+  <style>
+    body {
+      width: 300px;
+      margin: 0;
+      padding: 16px;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-size: 14px;
+      color: #1f2328;
+    }
+    h1 { font-size: 16px; margin: 0 0 12px; }
+    h2 { font-size: 14px; margin: 0 0 8px; }
+    .hidden { display: none; }
+    .status { margin: 0 0 12px; }
+    .username { font-weight: 600; }
+    .code {
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 22px;
+      letter-spacing: 2px;
+      text-align: center;
+      padding: 10px;
+      margin: 8px 0 12px;
+      background: #f6f8fa;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      user-select: all;
+    }
+    .error {
+      color: #b42318;
+      background: #fef3f2;
+      border: 1px solid #fecdca;
+      border-radius: 6px;
+      padding: 8px;
+      margin: 0 0 12px;
+    }
+    .hint { color: #59636e; font-size: 12px; margin: 8px 0 0; }
+    button {
+      display: block;
+      width: 100%;
+      padding: 8px;
+      margin: 0 0 8px;
+      font-size: 14px;
+      cursor: pointer;
+      border-radius: 6px;
+      border: 1px solid #d0d7de;
+      background: #f6f8fa;
+    }
+    button.primary { background: #1f883d; color: #fff; border-color: #1f883d; }
+    button:disabled { opacity: 0.6; cursor: default; }
+    .repo-block { margin: 0 0 12px; }
+    .label { display: block; margin: 0 0 4px; }
+    select {
+      display: block;
+      width: 100%;
+      padding: 6px;
+      margin: 0 0 8px;
+      font-size: 14px;
+      border-radius: 6px;
+      border: 1px solid #d0d7de;
+    }
+    .warning {
+      color: #7a4b00;
+      background: #fff8c5;
+      border: 1px solid #eac54f;
+      border-radius: 6px;
+      padding: 8px;
+      margin: 0 0 8px;
+      font-size: 12px;
+    }
+    .field-error { color: #b42318; font-size: 12px; margin: 0 0 8px; }
+    .result-ok { color: #1a7f37; font-size: 12px; margin: 0 0 8px; }
+    .test-block { margin: 0 0 12px; padding-top: 8px; border-top: 1px dashed #d0d7de; }
+  </style>
+</head>
+<body>
+  <h1>CodeSync</h1>
+
+  <p id="error" class="error hidden"></p>
+
+  <!-- Not connected -->
+  <section id="disconnected" class="hidden">
+    <p class="status">Not connected</p>
+    <button id="connect" class="primary">Connect GitHub</button>
+  </section>
+
+  <!-- Waiting for the user to approve on GitHub -->
+  <section id="pending" class="hidden">
+    <h2>Almost there</h2>
+    <p class="status">Enter this code on GitHub:</p>
+    <div id="user-code" class="code"></div>
+    <button id="open-github" class="primary">Copy code and open GitHub</button>
+    <button id="cancel">Cancel</button>
+    <p class="hint">After you approve on GitHub, reopen this popup.</p>
+  </section>
+
+  <!-- Connected -->
+  <section id="connected" class="hidden">
+    <p class="status">GitHub connected</p>
+    <p class="status">Username: <span id="username" class="username"></span></p>
+
+    <div class="repo-block">
+      <p class="status">Repository: <span id="repo-current" class="username"></span></p>
+      <p id="repo-warning" class="warning hidden"></p>
+      <button id="change-repo" class="hidden">Change repository</button>
+
+      <div id="repo-picker" class="hidden">
+        <label for="repo-select" class="label">Choose a repository:</label>
+        <select id="repo-select"></select>
+        <p id="repo-message" class="hint hidden"></p>
+        <button id="retry-repos" class="hidden">Try again</button>
+        <button id="save-repo" class="primary">Save Repository</button>
+        <button id="cancel-repo" class="hidden">Cancel</button>
+      </div>
+    </div>
+
+    <!-- TEMPORARY (Milestone 8B-1): remove once uploads are connected to Codeforces -->
+    <div class="test-block">
+      <button id="test-write">Test GitHub Write</button>
+      <p id="write-result" class="hint hidden"></p>
+    </div>
+
+    <button id="disconnect">Disconnect</button>
+  </section>
+
+  <script src="popup.js"></script>
+</body>
+</html>
