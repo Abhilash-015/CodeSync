@@ -23,10 +23,6 @@ const retryReposButton = document.getElementById("retry-repos");
 const saveRepoButton = document.getElementById("save-repo");
 const cancelRepoButton = document.getElementById("cancel-repo");
 
-// TEMPORARY test button (Milestone 8B-1)
-const testWriteButton = document.getElementById("test-write");
-const writeResultBox = document.getElementById("write-result");
-
 // What the popup currently knows
 let latestStatus = { state: "disconnected" };
 let repoList = { state: "idle", items: [], error: "", truncated: false }; // idle | loading | loaded | error
@@ -34,8 +30,6 @@ let pickerOpen = false;     // is the picker open while a repository is already 
 let selectedFullName = "";  // what the user picked in the dropdown
 let saveError = "";
 let saving = false;
-let testing = false;        // is a test write running?
-let writeResult = null;     // { ok, text } shown under the test button
 
 // Send a message to background.js (github-auth.js) and wait for its answer
 async function ask(type, extra) {
@@ -71,7 +65,6 @@ function render() {
   if (status.state === "connected") {
     document.getElementById("username").textContent = status.username;
     renderRepositoryArea();
-    renderWriteArea();
   }
   if (status.state === "pending") {
     document.getElementById("user-code").textContent = status.userCode;
@@ -158,21 +151,6 @@ function renderRepositoryArea() {
   updateSaveButton();
 }
 
-// Shows the result of the temporary "Test GitHub Write" button
-function renderWriteArea() {
-  testWriteButton.disabled = testing;
-  testWriteButton.textContent = testing ? "Testing..." : "Test GitHub Write";
-
-  if (writeResult) {
-    writeResultBox.textContent = writeResult.text;
-    writeResultBox.classList.toggle("result-ok", writeResult.ok);
-    writeResultBox.classList.toggle("field-error", !writeResult.ok);
-    setHidden(writeResultBox, false);
-  } else {
-    setHidden(writeResultBox, true);
-  }
-}
-
 function updateSaveButton() {
   saveRepoButton.disabled = saving || !repoSelect.value;
 }
@@ -211,7 +189,6 @@ async function refresh() {
     pickerOpen = false;
     selectedFullName = "";
     saveError = "";
-    writeResult = null;
   }
 
   render();
@@ -297,33 +274,10 @@ saveRepoButton.addEventListener("click", async () => {
     pickerOpen = false;
     selectedFullName = "";
     saveError = "";
-    writeResult = null; // an old test result belongs to the previous repository
   } else {
     saveError = (reply && reply.error) || "Could not save the repository.";
   }
   render();
-});
-
-// TEMPORARY: ask the background worker to create CodeSync/test.txt.
-// Only the plain answer comes back: { success, path, repository } or { success: false, error }.
-testWriteButton.addEventListener("click", async () => {
-  testing = true;
-  writeResult = null;
-  renderWriteArea();
-
-  const reply = await ask("GITHUB_TEST_WRITE");
-
-  testing = false;
-  if (reply && reply.success) {
-    const where = reply.repository ? " (" + reply.repository + ")" : "";
-    writeResult = { ok: true, text: "GitHub write successful: " + reply.path + where };
-  } else {
-    writeResult = {
-      ok: false,
-      text: "GitHub write failed: " + ((reply && reply.error) || "Unknown error.")
-    };
-  }
-  renderWriteArea();
 });
 
 // Update automatically when the sign-in or the saved repository changes

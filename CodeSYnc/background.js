@@ -284,14 +284,27 @@ async function watchSubmission(handle, submittedAt, tabId) {
           logAcceptedMetadata(submission);
           const source = await retrieveAndLogSource(submission, tabId); // handles its own errors
 
-          // Milestone 6: only make a path once we have the code
+          // Milestone 6 + 8B-2: make the path, then upload (only with the code in hand)
           if (source !== null) {
             const path = generateGitHubPath(getProblemMetadata(submission));
             if (path !== null) {
               console.log("[CodeSync] GitHub path: " + path);
+              try {
+                // Defined in github-auth.js. It checks the repository, finds an unused
+                // file name and uploads. It logs its own result and never throws.
+                await uploadSolutionToGitHub({
+                  submissionId: submission.id,
+                  path: path,
+                  source: source
+                });
+              } catch (error) {
+                console.error("[CodeSync] GitHub upload failed: unexpected error.");
+              }
+            } else {
+              console.warn("[CodeSync] GitHub upload skipped: no valid path could be generated.");
             }
           } else {
-            console.warn("[CodeSync] Skipping GitHub path: source code was not retrieved.");
+            console.error("[CodeSync] GitHub upload failed: Unable to retrieve source code.");
           }
         } else {
           console.log("[CodeSync] Submission not accepted.");

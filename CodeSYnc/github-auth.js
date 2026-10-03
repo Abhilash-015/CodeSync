@@ -487,14 +487,13 @@ async function getSelectedRepository() {
   return null;
 }
 
-// ---------- Milestone 8B-1: test write (TEMPORARY) ----------
+// ---------- Milestone 8B-2: upload an accepted solution ----------
 
-const GITHUB_TEST_FILE_PATH = "CodeSync/test.txt";
-const GITHUB_TEST_FILE_TEXT = "CodeSync GitHub write test\n";
-const GITHUB_TEST_COMMIT_MESSAGE = "CodeSync test write";
+const GITHUB_MAX_NAME_ATTEMPTS = 500; // safety limit for solution, solution_1, solution_2, ...
 
 // GitHub wants file contents as Base64 text. TextEncoder turns the text into
-// bytes (so accents and symbols survive), then btoa turns the bytes into Base64.
+// UTF-8 bytes (so accents, symbols and emoji survive), then btoa turns the bytes
+// into Base64. Nothing in the text is changed: spaces, tabs and line endings stay.
 function utf8ToBase64(text) {
   const bytes = new TextEncoder().encode(text);
   let binary = "";
@@ -505,75 +504,168 @@ function utf8ToBase64(text) {
   return btoa(binary);
 }
 
-// "CodeSync/test.txt" -> each part is URL-encoded, the "/" stays a "/"
+// "800/A_Watermelon/solution.cpp" -> each part is URL-encoded, the "/" stays a "/"
 function encodeRepoPath(path) {
   return path.split("/").map(encodeURIComponent).join("/");
 }
 
-// GITHUB_TEST_WRITE
-// Creates CodeSync/test.txt in the selected repository, on its default branch.
-// Never overwrites. Returns { success, path, repository } or { success: false, error }.
-async function testGitHubWrite() {
-  // 1. Is the user signed in?
-  if (!(await getSavedAuth())) {
-    return { success: false, error: "GitHub is not connected. Connect GitHub first." };
-  }
+// Put the number BEFORE the extension of the file name:
+//   ("800/A_Watermelon/solution.cpp", 0) -> "800/A_Watermelon/solution.cpp"
+//   ("800/A_Watermelon/solution.cpp", 1) -> "800/A_Watermelon/solution_1.cpp"
+//   ("800/A_Watermelon/solution.py", 2)  -> "800/A_Watermelon/solution_2.py"
+function pathWithNumber(path, number) {
+  if (number === 0) return path;
+  const lastSlash = path.lastIndexOf("/");
+  const lastDot = path.lastIndexOf(".");
+  if (lastDot <= lastSlash) return path + "_" + number; // file name has no extension
+  return path.slice(0, lastDot) + "_" + number + path.slice(lastDot);
+}
 
-  // 2. Which repository did the user choose?
-  const selected = await getSelectedRepository();
-  if (!selected) {
-    return { success: false, error: "No repository is selected. Choose and save a repository first." };
-  }
-  const repositoryName = selected.owner + "/" + selected.repo;
-  const fileUrl =
+// A path we are willing to write: no empty parts, no "." or ".." parts
+function isSafeRepoPath(path) {
+  if (typeof path !== "string" || path === "") return false;
+  return path.split("/").every((part) => part !== "" && part !== "." && part !== "..");
+}
+
+function githubContentsUrl(owner, repo, path) {
+  return (
     "https://api.github.com/repos/" +
-    encodeURIComponent(selected.owner) + "/" +
-    encodeURIComponent(selected.repo) + "/contents/" +
-    encodeRepoPath(GITHUB_TEST_FILE_PATH);
+    encodeURIComponent(owner) + "/" +
+    encodeURIComponent(repo) + "/contents/" +
+    encodeRepoPath(path)
+  );
+}
 
-  const alreadyThere = {
-    success: false,
-    error: GITHUB_TEST_FILE_PATH + " already exists in " + repositoryName + ". CodeSync did not overwrite it."
-  };
+// Does this path already exist in the repository? Asks GitHub every time.
+//   200 -> { exists: true }    404 -> { exists: false }
+//   anything else -> { error }  (we never guess that a file is missing)
+async function repoPathExists(owner, repo, path) {
+  const result = await githubApiRequest("GET", githubContentsUrl(owner, repo, path));
+  if (result.ok) return { exists: true };
+  if (result.status === 404) return { exists: false };
+  return { error: result.error };
+}
 
-  // 3. Look first: does the file already exist? (no branch given = default branch)
-  const lookup = await githubApiRequest("GET", fileUrl);
-  if (lookup.ok) return alreadyThere;
-  if (lookup.status !== 404) return { success: false, error: lookup.error };
-  // 404 means "nothing there yet", so we may create it
-
-  // 4. Create the file. No "sha" is sent, so GitHub only CREATES files. If the
-  //    file appeared in the meantime, GitHub refuses (422) instead of overwriting.
-  const write = await githubApiRequest("PUT", fileUrl, {
-    message: GITHUB_TEST_COMMIT_MESSAGE,
-    content: utf8ToBase64(GITHUB_TEST_FILE_TEXT)
-    // no "branch" -> the repository's default branch is used
-  });
-
-  if (write.ok) {
-    console.log("[CodeSync] GitHub test write successful");
-    return { success: true, path: GITHUB_TEST_FILE_PATH, repository: repositoryName };
-  }
-
-  if (write.status === 422 && /sha/i.test(write.githubMessage || "")) {
-    return alreadyThere; // someone created it between our check and our write
-  }
-  if (write.status === 422) {
-    return { success: false, error: "GitHub rejected the file (HTTP 422)." };
-  }
-  if (write.status === 409) {
-    return { success: false, error: "GitHub reported a conflict while saving the file. Please try again." };
-  }
+// A readable reason for a failed write (the raw GitHub text is not echoed)
+function describeWriteError(write, repositoryName) {
+  if (write.status === 422) return "GitHub rejected the file (HTTP 422).";
+  if (write.status === 409) return "GitHub reported a conflict while saving the file.";
   if (write.status === 404) {
-    return { success: false, error: "The repository was not found, or CodeSync does not have write access to it." };
+    return "Repository not found, or CodeSync does not have write access to " + repositoryName + ".";
   }
   if (write.status === 403 && !/rate limit/i.test(write.error)) {
-    return {
-      success: false,
-      error: "GitHub denied the write. You may not have write access, branch protection may block direct commits, or an organization may need to approve CodeSync."
-    };
+    return "Permission denied: GitHub refused the write to " + repositoryName + ". You may not have write access, branch protection may block direct commits, or an organization may need to approve CodeSync.";
   }
-  return { success: false, error: write.error };
+  return write.error;
+}
+
+// Uploads are done one at a time, so two accepted submissions for the same
+// problem can never fight over the same file name inside this worker.
+let githubUploadChain = Promise.resolve();
+
+// Called by background.js after an accepted submission.
+// details = { submissionId, path, source }. Never throws.
+function uploadSolutionToGitHub(details) {
+  const run = githubUploadChain.then(() => runGitHubUpload(details));
+  githubUploadChain = run.catch(() => {});
+  return run;
+}
+
+async function runGitHubUpload(details) {
+  const fail = (message) => {
+    console.error("[CodeSync] GitHub upload failed: " + message);
+    return { success: false, error: message };
+  };
+
+  try {
+    const submissionId = details && details.submissionId;
+    const path = details && details.path;
+    const source = details && details.source;
+
+    if (typeof source !== "string" || source.length === 0) {
+      return fail("Unable to retrieve source code.");
+    }
+    if (!isSafeRepoPath(path)) {
+      return fail("The generated path is not valid.");
+    }
+
+    // 1. Is GitHub connected?
+    if (!(await getSavedAuth())) {
+      console.warn("[CodeSync] GitHub upload skipped: GitHub is not connected. Open CodeSync and click Connect GitHub.");
+      return { success: false, error: "GitHub is not connected." };
+    }
+
+    // 2. Which repository did the user choose?
+    const selected = await getSelectedRepository();
+    if (!selected) {
+      console.warn("[CodeSync] GitHub upload skipped: no repository is selected. Open CodeSync and choose one.");
+      return { success: false, error: "No repository is selected." };
+    }
+    const repositoryName = selected.owner + "/" + selected.repo;
+
+    // 3. Can we write to it? (also tells us the default branch, for the log)
+    const info = await githubApiRequest(
+      "GET",
+      "https://api.github.com/repos/" + encodeURIComponent(selected.owner) + "/" + encodeURIComponent(selected.repo)
+    );
+    if (!info.ok) {
+      if (info.status === 404) {
+        return fail("Repository not found: " + repositoryName + " (or you no longer have access to it).");
+      }
+      return fail(info.error);
+    }
+    if (!isUsableRepository(info.data)) {
+      return fail("Permission denied: you cannot push to " + repositoryName + ", or it is archived.");
+    }
+    const defaultBranch = typeof info.data.default_branch === "string" ? info.data.default_branch : "";
+
+    // 4. Encode the exact source once
+    const content = utf8ToBase64(source);
+
+    // 5. Find the first unused name and create the file there
+    for (let number = 0; number < GITHUB_MAX_NAME_ATTEMPTS; number++) {
+      const candidate = pathWithNumber(path, number);
+
+      const lookup = await repoPathExists(selected.owner, selected.repo, candidate);
+      if (lookup.error) {
+        return fail("Unable to determine whether " + candidate + " exists: " + lookup.error);
+      }
+      if (lookup.exists) continue; // taken, try the next number
+
+      // No "sha" is sent, so GitHub can only CREATE a file here, never replace one.
+      // No "branch" is sent, so GitHub uses the repository's default branch.
+      const write = await githubApiRequest(
+        "PUT",
+        githubContentsUrl(selected.owner, selected.repo, candidate),
+        {
+          message: "Add " + candidate + " (Codeforces submission " + submissionId + ")",
+          content: content
+        }
+      );
+
+      if (write.ok) {
+        console.log("[CodeSync] GitHub upload successful");
+        console.log("[CodeSync] Repository: " + repositoryName);
+        console.log("[CodeSync] Path: " + candidate);
+        console.log("[CodeSync] Submission ID: " + submissionId);
+        if (defaultBranch) console.log("[CodeSync] Branch: " + defaultBranch);
+        return { success: true, path: candidate, repository: repositoryName };
+      }
+
+      // Someone created this exact file between our check and our write.
+      // GitHub refused to overwrite it, so move on to the next name (and say so).
+      if (write.status === 422 && /sha/i.test(write.githubMessage || "")) {
+        console.warn("[CodeSync] " + candidate + " was created a moment ago by someone else. Trying the next name.");
+        continue;
+      }
+
+      return fail(describeWriteError(write, repositoryName));
+    }
+
+    return fail("Too many existing solution files for this problem (" + GITHUB_MAX_NAME_ATTEMPTS + " names checked).");
+  } catch (error) {
+    return fail("Unexpected error (" + (error && error.name ? error.name : "unknown") + ").");
+  }
 }
 
 // ---------- Messages from the popup ----------
@@ -596,8 +688,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     work = disconnectGitHub().then(() => getGitHubStatus());
   } else if (message.type === "GITHUB_LIST_REPOSITORIES") {
     work = listGitHubRepositories();
-  } else if (message.type === "GITHUB_TEST_WRITE") {
-    work = testGitHubWrite();
   } else if (message.type === "GITHUB_SAVE_REPOSITORY") {
     work = saveGitHubRepository(message.owner, message.repo).then(async (result) => ({
       ok: result.ok,
